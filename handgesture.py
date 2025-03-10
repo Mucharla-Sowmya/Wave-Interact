@@ -4,7 +4,6 @@ import streamlit as st
 import numpy as np
 import google.generativeai as genai
 
-
 # MediaPipe Hand Module Setup
 mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
@@ -22,9 +21,18 @@ genai.configure(api_key='AIzaSyDC-DZY-_trmckvcwm_N8uga8zzDX0YWVI')  # Replace wi
 # Placeholder for AI-generated output
 output_placeholder = st.empty()
 
-# Function to map gestures to simple descriptions
-def get_gesture_description(hand_landmarks):
+# Function to map gestures to simple descriptions and determine left or right hand
+def get_gesture_description_and_hand_side(hand_landmarks, frame_width):
     if hand_landmarks:
+        # Assuming we are detecting one hand
+        landmarks = hand_landmarks[0].landmark
+
+        # Calculate the average x-coordinate of the hand landmarks
+        avg_x = np.mean([landmark.x for landmark in landmarks])
+        
+        # Determine if it is left or right hand
+        hand_side = "Right" if avg_x < 0.5 else "Left"  # Corrected here
+
         # Check for heart gesture (two hands)
         if len(hand_landmarks) == 2:  # Check if both hands are detected
             left_hand = hand_landmarks[0].landmark
@@ -45,12 +53,9 @@ def get_gesture_description(hand_landmarks):
 
             # Check if fingertips are close enough to form a heart
             if index_distance < 0.1 and thumb_distance < 0.1:  # Adjust thresholds as needed
-                return "Heart"
+                return "Heart", "Both hands"
 
         # Single-hand gestures
-        landmarks = hand_landmarks[0].landmark
-        
-        # Extract finger tips and joints
         thumb_tip = landmarks[mp_hands.HandLandmark.THUMB_TIP]
         thumb_ip = landmarks[mp_hands.HandLandmark.THUMB_IP]
         index_tip = landmarks[mp_hands.HandLandmark.INDEX_FINGER_TIP]
@@ -68,7 +73,7 @@ def get_gesture_description(hand_landmarks):
             middle_tip.y > middle_dip.y and
             ring_tip.y > ring_dip.y and
             pinky_tip.y > pinky_dip.y):
-            return "Fist"
+            return "Fist", hand_side
         
         # Check for "Thumbs Up" gesture: Thumb tip above the index tip and other fingers curled
         elif (thumb_tip.y < index_tip.y and 
@@ -76,7 +81,7 @@ def get_gesture_description(hand_landmarks):
               middle_tip.y > middle_dip.y and 
               ring_tip.y > ring_dip.y and 
               pinky_tip.y > pinky_dip.y):
-            return "Thumbs Up"
+            return "Thumbs Up", hand_side
         
         # Check for "Open Hand" gesture: All fingers extended
         elif (thumb_tip.y < thumb_ip.y and  # Thumb extended
@@ -84,7 +89,7 @@ def get_gesture_description(hand_landmarks):
               middle_tip.y < middle_dip.y and  # Middle finger extended
               ring_tip.y < ring_dip.y and  # Ring finger extended
               pinky_tip.y < pinky_dip.y):  # Pinky finger extended
-            return "Open Hand"
+            return "Open Hand", hand_side
         
         # Check for "Okay" gesture: Thumb and index tip are close, others extended
         elif (abs(thumb_tip.x - index_tip.x) < 0.05 and
@@ -92,14 +97,14 @@ def get_gesture_description(hand_landmarks):
               middle_tip.y < middle_dip.y and
               ring_tip.y < ring_dip.y and
               pinky_tip.y < pinky_dip.y):
-            return "Okay"
+            return "Okay", hand_side
         
         # Check for "Rock" gesture (Sign of the Horns): Index and pinky fingers extended, others curled
         elif (index_tip.y < index_dip.y and 
               pinky_tip.y < pinky_dip.y and
               middle_tip.y > middle_dip.y and
               ring_tip.y > ring_dip.y):
-            return "Rock"
+            return "Rock", hand_side
         
         # Check for "Peace" gesture: Index and middle fingers extended, others curled
         elif (index_tip.y < index_dip.y and 
@@ -107,7 +112,7 @@ def get_gesture_description(hand_landmarks):
               abs(index_tip.x - middle_tip.x) < 0.1 and 
               ring_tip.y > ring_dip.y and 
               pinky_tip.y > pinky_dip.y):
-            return "Peace"
+            return "Peace", hand_side
         
         # Check for "Love" gesture: Thumb, index, and pinky extended; middle and ring fingers curled
         elif (thumb_tip.y < thumb_ip.y and  # Thumb extended
@@ -115,22 +120,33 @@ def get_gesture_description(hand_landmarks):
               pinky_tip.y < pinky_dip.y and  # Pinky finger extended
               middle_tip.y > middle_dip.y and  # Middle finger curled
               ring_tip.y > ring_dip.y):  # Ring finger curled
-            return "Love"
+            return "Love", "Both hands"
         
-    return "No gesture detected."
+    return "No gesture detected.", "Unknown"
 
 # Function to get a natural language response from Gemini based on gesture description
-def generate_gemini_response(gesture_description):
+def generate_gemini_response(gesture_description, hand_side):
     try:
-        # Initialize the Gemini model
-        model = genai.GenerativeModel('gemini-pro')  # Use the appropriate Gemini model
-        
-        # Generate a response
-        response = model.generate_content(gesture_description)
-        return response.text
+        # Provide gesture-specific responses
+        if gesture_description == "Thumbs Up":
+            return f"Awesome! You're on the right track with your {hand_side} hand! Keep up the good work! 👍"
+        elif gesture_description == "Fist":
+            return f"You're showing strength with your {hand_side} hand! Keep it up! 💪"
+        elif gesture_description == "Open Hand":
+            return f"Your {hand_side} hand is showing calm and peace. Relax, you've got this! ✋"
+        elif gesture_description == "Okay":
+            return f"Everything's good with your {hand_side} hand! Let's move ahead with confidence. 👍"
+        elif gesture_description == "Rock":
+            return f"Rock on with your {hand_side} hand! Stay rebellious and have fun! 🤘"
+        elif gesture_description == "Peace":
+            return f"Your {hand_side} hand is sending peace and love to the world! ✌️"
+        elif gesture_description == "Heart":
+            return f"Spreading love with your both hands! Keep those positive vibes flowing! ❤️"
+        else:
+            return f"Sorry, no gesture detected with your {hand_side} hand. Try again! ✋"
     except Exception as e:
         print(f"Error generating response: {e}")
-        return None
+        return "Sorry, something went wrong with the AI response."
 
 # Instantiate the hands object
 hands = mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.7)
@@ -155,14 +171,14 @@ if camera:
         for hand_landmarks in results.multi_hand_landmarks:
             mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
-        # Get gesture description based on detected hand landmarks
-        gesture_description = get_gesture_description(results.multi_hand_landmarks)
+        # Get gesture description and hand side based on detected hand landmarks
+        gesture_description, hand_side = get_gesture_description_and_hand_side(results.multi_hand_landmarks, frame.shape[1])
 
         # Generate a response using Gemini
-        ai_response = generate_gemini_response(gesture_description)
+        ai_response = generate_gemini_response(gesture_description, hand_side)
 
         # Display the result on the Streamlit app
-        output_placeholder.text(f"Detected Gesture: {gesture_description}\nAI Response: {ai_response}")
+        output_placeholder.text(f"Detected Gesture: {gesture_description} ({hand_side} )\nAI Response: {ai_response}")
     else:
         output_placeholder.text("No hands detected. Please show your hand in front of the camera.")
 
